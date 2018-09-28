@@ -141,7 +141,12 @@ class MU:
 
 
         for m in self.M:
-            pmis[m] = self.pmi(m)
+            pmi = {}
+            pmi["mu"] = self.pmi(m)
+            pmi["m_ij"]=self.d_mij[m]
+            pmi["set_ij"] = self.d_Mij[m]
+            pmi["m_set_ij"] = self.d_mMij[m]
+            pmis[m] = pmi
 
         return pmis
 
