@@ -1,3 +1,4 @@
+import numpy
 import pandas as pd
 import os
 import csv
@@ -126,6 +127,7 @@ if __name__=="__main__":
     # Ps = [0.800, 0.900, 0.990]
     # Es = [0.001, .050, 0.1, 0.5]
     Ps = [0.990]
+    # Es = [.050]
     Es = [.050]
 
 
@@ -139,9 +141,9 @@ if __name__=="__main__":
     all_metrics = dd_metrics+wd_metrics+simple_metrics
 
     metrics_pretty_header ={"act":"\\act","nct":"\\nct","nEU":"\\neu","nsDCG":"\\nsdcg","alpha-nDCG":"\\alphandcg","nERR-IA":"\\nerria"}
-
+    tie_data_rank = "dense"
     for m in rbus_metrics:
-        metrics_pretty_header[m] = "\\rbu{{{}}}{{{}}}".format(m.split("_")[1],m.split("_")[2])
+        metrics_pretty_header[m] = "\\rbu".format(m.split("_")[1],m.split("_")[2])
     M_GS = [
         ["p"],
         ["strec"],
@@ -810,9 +812,13 @@ if __name__=="__main__":
 
 
 
-        def print_rank_correlation(self, years, metrics_sets, iterations, mu_csv_file):
+        def print_rank_correlation(self, left_field,right_field,years, metrics_sets, iterations, mu_csv_file,print_all,print_all_years):
             iterations = [str(i) for i in iterations]
-            all_analysis = self.get_all_analysis(iterations, metrics_sets, mu_csv_file, years)
+            all_analysis = self.get_all_analysis(metrics_sets, mu_csv_file, years)
+
+            all_analysis_1eft = self.add_sum_rankings(all_analysis,left_field,print_all,print_all_years)
+            all_analysis_right = self.add_sum_rankings(all_analysis, right_field, print_all, print_all_years)
+            data = all_analysis_1eft.merge(all_analysis_right,on=["year","iteration","metric_set","metric"])
 
             print("\\begin{{tabular}}{{{}}}\n".format("c" * (len(metrics_sets)  + 1)))
 
@@ -840,27 +846,35 @@ if __name__=="__main__":
             print ("& ".join(colums)+"\\\\")
             print("\midrule")
 
-            data = pd.DataFrame.from_dict(all_analysis)
 
 
 
-            for year in years:
+
+            for year in years + ["all"]:
                 print("\n\midrule \multicolumn{{{}}}{{{{c}}}}{{{}}} \\\\ \midrule".format(
                     len(metrics_sets) + 1, "TREC Dynamic Domain " + year))
 
-                for iteration in iterations:
+                for iteration in iterations + ["all"]:
                     colums = [iteration]
                     for metric_set in metrics_sets:
-                        it_df = data[ (data["iteration"]==int(iteration)) & (data["year"]==year) & (data["metric_set"]==metric_set)]
+                        it_df = data[ (data["iteration"]==iteration) & (data["year"]==year) & (data["metric_set"]==metric_set)]
+                        # it_df = data[ (data["iteration"]==iteration) & (data["metric_set"]==metric_set)]
 
-                        mu_ranks = list(it_df["mu_rank"].values)
-                        it_sig_ranks = list(it_df["sig_wins_rank"].values);
+                        left_field_ranks = list(it_df[left_field+"_rank"].values)
+                        right_field_ranks = list(it_df[right_field+"_rank"].values);
+
+                        left_field_ranks = list(it_df[left_field].values)
+                        right_field_ranks = list(it_df[right_field].values);
+
+                        left_field_ranking = list(it_df.sort_values(by=[left_field+"_rank"],ascending=True)["metric"].values)
+                        right_field_ranking = list(it_df.sort_values(by=[right_field+"_rank"],ascending=True)["metric"].values)
+                        tau,p = stats.kendalltau(left_field_ranking,right_field_ranking)
 
 
-                        tau_sig, p = stats.spearmanr(mu_ranks, it_sig_ranks)
+                        speanr, p = stats.spearmanr(left_field_ranks, right_field_ranks)
 
-                        # colums.append("{0:.2f}".format(tau_it_mu))
-                        cell="{0:.2f}".format(tau_sig)
+                        # cell = "{0:.2f}".format(tau)
+                        cell="{0:.2f}".format(speanr)
                         if (p < 0.05):
                             cell+="$^*$"
                         colums.append(cell)
@@ -872,51 +886,20 @@ if __name__=="__main__":
             print("\\end{tabular}\n")
 
         def print_analysis_latex_report(self,field,years, metrics_sets,iterations,mu_csv_file,print_all=False,print_all_years=False):
+
+            all_analysis = self.get_all_analysis(metrics_sets, mu_csv_file, years)
+            all_analysis = self.add_sum_rankings(all_analysis,field,print_all,print_all_years)
+
             iterations = [str(i) for i in iterations]
-            all_analysis = self.get_all_analysis(iterations, metrics_sets, mu_csv_file, years)
-
-            all_analysis = pd.DataFrame(all_analysis)
-
-            pading = 1 if print_all else 0
-
-            year_set_rank = {}
-            for k, group in all_analysis.groupby(["year","metric_set"]):
-                metric_sum = []
-                for m,ggroup in group.groupby(["metric"]):
-                    sum=ggroup[field].sum()
-                    metric_sum.append({"key":k[0]+"-"+k[1]+"-"+m,"metric":m,field:sum})
-
-                metric_sum_rank_df = pd.DataFrame(metric_sum)
-                metric_sum_rank_df[field+"_rank"] = metric_sum_rank_df[field].rank(method="average",ascending=False)
-                metric_sum = metric_sum_rank_df.to_dict(orient="records")
-
-                for d in metric_sum:
-                        year_set_rank[d["key"]]= d[field+"_rank"]
-
-            iteration_set_rank = {}
-            for k, group in all_analysis.groupby(["iteration", "metric_set"]):
-                metric_sum = []
-                for m, ggroup in group.groupby(["metric"]):
-                    sum = ggroup[field].sum()
-                    metric_sum.append({"key": str(k[0]) + "-" + k[1]+"-"+m, "metric": m, field: sum})
-
-
-
-                metric_sum_rank_df = pd.DataFrame(metric_sum)
-                metric_sum_rank_df[field + "_rank"] = metric_sum_rank_df[field].rank(method="average", ascending=False)
-                metric_sum = metric_sum_rank_df.to_dict(orient="records")
-
-                for d in metric_sum:
-                    iteration_set_rank[d["key"]] = d[field + "_rank"]
-
-            print("\\begin{{tabular}}{{l{}}}\n".format("c" * (len(metrics_sets) * (len(iterations) +pading))))
-
             single_pretty_headers = {"strec": "Diversity (Div)", "p": "Topical Relevance (Rel.)",
                                      "ttime": "User Effort"}
             dimensin_pretty_short = {"strec": "Div.", "p": "Rel.", "ttime": "User effort"}
 
             set_pretty_header = {}
 
+            iterations = iterations + ["all"] if print_all else iterations
+            years = years + ["all"] if print_all_years else years
+            print("\\begin{{tabular}}{{l{}}}\n".format("c" * (len(metrics_sets) * (len(iterations)))))
             for metric_set in metrics_sets:
                 if metric_set in single_pretty_headers:
                     set_pretty_header[metric_set] = single_pretty_headers[metric_set]
@@ -932,7 +915,7 @@ if __name__=="__main__":
             for metric_set in metrics_sets:
                 scount+=1
                 colums.append(
-                    "{}\multicolumn{{{}}}{{{{c}}}}{{{}}}".format("\t"*scount,len(iterations)+pading, set_pretty_header[metric_set]))
+                    "{}\multicolumn{{{}}}{{{{c}}}}{{{}}}".format("\t"*scount,len(iterations), set_pretty_header[metric_set]))
 
             print("\\toprule")
             print ("\n& ".join(colums) + "\\\\")
@@ -940,7 +923,8 @@ if __name__=="__main__":
 
             colums = ["{\it Metric/Iteration}"]
 
-            iterations = [str(i) for i in iterations]
+
+
             scount=0
             for metric_set in metrics_sets:
                 scount+=1
@@ -948,18 +932,15 @@ if __name__=="__main__":
                 for iteration in iterations:
                     scolumns.append("{{\it {} }}".format(iteration))
 
-                if print_all:
-                    scolumns.append("{\it All}")
                 colums.append("\n"+("\t"*scount)+"& ".join(scolumns))
 
             print ("& ".join(colums) + "\\\\")
             print("\n")
-            total_rankings = {}
 
 
             for year in years:
                 print("\n\midrule \multicolumn{{{}}}{{{{c}}}}{{{}}} \\\\ \midrule".format(
-                    len(metrics_sets) * (len(iterations)+pading)+1, "TREC Dynamic Domain " + year))
+                    len(metrics_sets) * (len(iterations))+1, "TREC Dynamic Domain " + year))
 
 
                 for m in complex_metrics:
@@ -971,40 +952,20 @@ if __name__=="__main__":
                         metric_set_df = all_analysis[(all_analysis["year"] == year) & (all_analysis["metric_set"] == metric_set) & (all_analysis["metric"] == m)]
                         mscoumns = []
                         for k, group in metric_set_df.groupby(["iteration"]):
-                            if str(k) in iterations:
+                            if str(k).replace(".0","") in iterations:
                                 v = group[field+"_rank"].values[0]
-                                mscoumns.append("{0:.1f}".format(v))
-                        if print_all:
-                            mscoumns.append("{0:.1f}".format(year_set_rank[year+"-"+metric_set+"-"+m]))
+                                mscoumns.append("{0:g}".format(v))
+
                         colums.append(("\t"*scount)+" & ".join(mscoumns))
                     print ("\n & ".join(colums) +"\\\\")
-
-            if (print_all_years):
-                print("\n\midrule \multicolumn{{{}}}{{{{c}}}}{{{}}} \\\\ \midrule".format(
-                    len(metrics_sets) * (len(iterations) + pading) + 1, "All years"))
-                for m in complex_metrics:
-                    colums = [metrics_pretty_header[m]]
-                    scount = 0
-
-                    for metric_set in metrics_sets:
-                        scount+=1
-                        # metric_set_df = all_analysis[(all_analysis["iteration"] == iteration) & (all_analysis["metric_set"] == metric_set) & (all_analysis["metric"] == m)]
-                        mscoumns = []
-                        for iteration in iterations:
-                            key = iteration+"-"+metric_set+"-"+m
-                            mscoumns.append("{0:.1f}".format(iteration_set_rank[key]))
-
-                        if print_all:
-                            mscoumns.append("--")
-                        colums.append(("\t"*scount)+" & ".join(mscoumns))
-                    print ("\n & ".join(colums) +"\\\\")
-
 
             print("\\bottomrule")
             print("\end{tabular}")
 
-        def get_all_analysis(self, iterations, metrics_sets, mu_csv_file, years):
+        def get_all_analysis(self, metrics_sets, mu_csv_file, years):
+            iterations = [str(i) for i in range(1,11)]
             years_cd_sig_wins_ranking = {}
+
             years_cd_ranking = {}
             years_mu_rankings = {}
             for year in years:
@@ -1027,7 +988,7 @@ if __name__=="__main__":
                                     "it_rank": years_cd_ranking[year][metric_set][iteration][m]["it_rank"],
                                     "mu_rank": years_mu_rankings[year][metric_set][iteration][m]["mu_rank"],
                                     "year": year,
-                                    "iteration": int(iteration),
+                                    "iteration": iteration,
                                     "mu_wins_rank": years_mu_rankings[year][metric_set][iteration][m]["mu_wins_rank"],
                                     "mu_wins": years_mu_rankings[year][metric_set][iteration][m]["mu_wins"],
                                     "metric_set": metric_set,
@@ -1292,7 +1253,7 @@ if __name__=="__main__":
                     mus_df = pd.DataFrame.from_dict(
                         {"metric": list(metrics_mus.keys()), "mu": list(metrics_mus.values())})
                     # metrics_mus = sorted(metrics_mus.iteritems(), key=lambda (k,v): (v,k),reverse=True)
-                    mus_df["mu_rank"] = mus_df["mu"].rank(method='average', ascending=False)
+                    mus_df["mu_rank"] = mus_df["mu"].rank(method=tie_data_rank, ascending=False)
                     mus_df = mus_df.sort_values(by=["mu_rank"])
                     # print(mus_df)
 
@@ -1340,11 +1301,11 @@ if __name__=="__main__":
 
                     metric_df = pd.DataFrame.from_dict(
                         {"metric": list(metrics_mus.keys()), "mu": list(metrics_mus.values())})
-                    metric_df["mu_rank"] = metric_df["mu"].rank(method='average', ascending=False)
+                    metric_df["mu_rank"] = metric_df["mu"].rank(method=tie_data_rank, ascending=False)
 
                     mus_df = pd.DataFrame.from_dict(
                         {"metric": list(metrics_wins.keys()), "wins": list(metrics_wins.values())})
-                    metric_df["mu_wins_rank"] = mus_df["wins"].rank(method='average', ascending=False)
+                    metric_df["mu_wins_rank"] = mus_df["wins"].rank(method=tie_data_rank, ascending=False)
                     metric_df["mu_wins"] = mus_df["wins"]
 
                     metric_df = metric_df.sort_values(by=["mu_rank"])
@@ -1616,7 +1577,7 @@ if __name__=="__main__":
                         iteration_wins_ranking.append({"metric":m,"sig_wins":wins})
 
                     ranking_df = pd.DataFrame.from_dict(iteration_wins_ranking)
-                    ranking_df["sig_wins_rank"] = ranking_df["sig_wins"].rank(ascending=False)
+                    ranking_df["sig_wins_rank"] = ranking_df["sig_wins"].rank(method="dense",ascending=False)
                     ranking_df= ranking_df.sort_values(by="sig_wins_rank")
 
 
@@ -1631,6 +1592,56 @@ if __name__=="__main__":
                 metrics_set_ranking[metrics_set] = iterations_rankings
 
             return metrics_set_ranking;
+
+        def add_sum_rankings(self,all_analysis,field,print_all, print_all_years):
+            filterd = []
+            columns = ["year", "iteration", "metric_set", "metric",field,field+"_rank"]
+
+
+            for row in all_analysis:
+                d = {}
+                for column in columns:
+                    d[column] = row[column]
+
+                filterd.append(d)
+
+            all_analysis = pd.DataFrame(filterd)
+
+            for k, group in all_analysis.groupby(["iteration", "metric_set"]):
+                metric_sum = []
+                for m, ggroup in group.groupby(["metric"]):
+                    assert len(ggroup[field].values)==3
+                    sum = ggroup[field].sum()
+                    r = {"year": "all", "iteration": k[0], "metric_set": k[1], "metric": m, field: sum}
+                    metric_sum.append(r)
+
+                metric_sum_rank_df = pd.DataFrame(metric_sum)
+                metric_sum_rank_df[field + "_rank"] = metric_sum_rank_df[field].rank(method=tie_data_rank,
+                                                                                     ascending=False)
+                metric_sum = metric_sum_rank_df.to_dict(orient="records")
+
+                for d in metric_sum:
+                    if (print_all_years):
+                        filterd.append(d)
+
+            all_analysis = pd.DataFrame(filterd)
+            for k, group in all_analysis.groupby(["year", "metric_set"]):
+                metric_sum = []
+                for m, ggroup in group.groupby(["metric"]):
+                    assert len(ggroup[field].values) == 10
+                    sum = ggroup[field].sum()
+                    metric_sum.append({"year": k[0], "metric_set": k[1], "iteration": "all", "metric": m, field: sum})
+
+                metric_sum_rank_df = pd.DataFrame(metric_sum)
+                metric_sum_rank_df[field + "_rank"] = metric_sum_rank_df[field].rank(method=tie_data_rank,
+                                                                                     ascending=False)
+                metric_sum = metric_sum_rank_df.to_dict(orient="records")
+
+                for d in metric_sum:
+                    if (print_all):
+                        filterd.append(d)
+            all_analysis = pd.DataFrame(filterd)
+            return all_analysis
 
 
     # for year in ["2015"]:
@@ -1661,12 +1672,28 @@ if __name__=="__main__":
     # trec_analysis.generate_iteration_cd_ranking_latex_report(years=["2015","2016","2017"],metrics_sets=M_GS_Labels,iterations=[1,2,5,8,10],sig=False)
     # trec_analysis.generate_iteration_cd_wins_latex_report(years=["2016"], metrics_sets=M_GS_Labels,iterations=[1, 2, 5, 8, 10], sig=False)
     # trec_analysis.generate_iteration_cd_wins_ranking_latex_report(years=["2015","2016","2017"], metrics_sets=M_GS_Labels,iterations=[1, 2, 5, 8, 10], sig=False)
-    trec_analysis.print_rank_correlation(years=["2015", "2016", "2017"], metrics_sets=M_GS_Labels, mu_csv_file="trec-{}-mu-simple-metrics.csv", iterations=[1, 3, 7, 10])
+    #
     # trec_analysis.generate_iteration_mu_latex_report(years=years,metrics_sets=["simple-metrics"], mu_csv_file="trec-{}-mu-{}.csv")
     # trec_analysis.generate_iteration_mu_wins_ranking_latex_report(years=["2016"], metrics_sets=M_GS_Labels,mu_csv_file="trec-{}-mu-simple-metrics.csv",iterations=[str(i) for i in [1,2,5,8,10]])
     # trec_analysis.generate_iteration_mu_metric_summarized_ranking_latex_report(years=["2015","2016","2017"], metrics_sets=M_GS_Labels,mu_csv_file="trec-{}-mu-simple-metrics.csv",iterations=["1","2","5","8","10"])
     # trec_analysis.print_analysis_latex_report(field="mu_wins",years=["2016", "2017"], metrics_sets=M_GS_Labels,mu_csv_file="trec-{}-mu-simple-metrics.csv", iterations=[1, 2, 5, 8, 10],print_all=False)
     # trec_analysis.print_analysis_latex_report(field="mu_wins", years=["2015","2016", "2017"], metrics_sets=M_GS_Labels,mu_csv_file="trec-{}-mu-simple-metrics.csv", iterations=[1, 3, 7, 10],print_all_years=True,print_all=True)
     # trec_analysis.print_analysis_latex_report(field="sig_wins", years=["2015", "2016", "2017"], metrics_sets=M_GS_Labels,
-    #                                           mu_csv_file="trec-{}-mu-simple-metrics.csv", iterations=[1, 3, 7, 10],
+    #                                           mu_csv_file="trec-{}-mu-simple-metrics.csv", iterations=[1, 3, 10],
     #                                           print_all_years=True, print_all=True)
+
+    trec_analysis.print_analysis_latex_report(field="mu_wins", years=["2015", "2016", "2017"],
+                                              metrics_sets=M_GS_Labels,
+                                              mu_csv_file="trec-{}-mu-simple-metrics.csv", iterations=[1, 3, 10],
+                                              print_all_years=True, print_all=True)
+
+    # trec_analysis.print_rank_correlation(left_field="mu_wins", right_field = "sig_wins",years=["2015", "2016", "2017"], metrics_sets=M_GS_Labels,
+    #                                      mu_csv_file="trec-{}-mu-simple-metrics.csv", iterations=[1, 3, 10],print_all=True,print_all_years=True)
+
+    # data = [{"wins":5,"metric":"a"},{"wins":4,"metric":"b"},{"wins":4,"metric":"c"},{"wins":3,"metric":"d"}]
+    # data_df = pd.DataFrame(data)
+    # data_df["rank_avg"] = data_df["wins"].rank(method="average",ascending=False)
+    # data_df["rank_min"] = data_df["wins"].rank(method="min", ascending=False)
+    # data_df["rank_max"] = data_df["wins"].rank(method="max", ascending=False)
+    # data_df["rank_dense"] = data_df["wins"].rank(method="dense", ascending=False)
+    # print (data_df)
