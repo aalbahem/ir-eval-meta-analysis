@@ -962,15 +962,17 @@ def validate_metrics(df, metrics=[], runs=[], M=3,print_na=False, print_violatio
     runs_metrics_scores = {}
 
 
+    records = pd.DataFrame.to_dict(avg_df, orient='records')
 
-    for name, group in avg_df.groupby("run"):
-        runs_metrics_scores[name] = {}
-        records = pd.DataFrame.to_dict(group,orient='records')
-        runs_metrics_scores[name]=  records
+    df_runs = []
+    for r in records:
+        name = r["run"]
+        runs_metrics_scores[name] = r
+        # df_runs.append(name)
 
 
     if len(runs) == 0:
-            runs = runs_metrics_scores.keys()
+            runs =generate_runs(a,M)
     a_runs = [run for run in runs if str(run).startswith("a")]
 
     if (one_branch_only):
@@ -979,36 +981,84 @@ def validate_metrics(df, metrics=[], runs=[], M=3,print_na=False, print_violatio
 
     count=0
     na_count = 0
-    for y, z in itertools.combinations(runs,2):
-                rules = get_incremental_matching_rules(y, z)
 
-                count+=1
-                print (count)
-                for rule in rules:
-                    if (isinstance(rule,NA)):
-                        if (g_path_rule.match(y,z)):
-                            rule = g_path_rule
-                        # elif (e_path_rule.match(z,y)):
-                        #     rule = e_path_rule
-                        else:
-                            na_count += 1
-                            continue
-                    for metric in metrics:
-                        metrics_rules_matches[metric][rule.name] += 1
-                        expect = rule.sign(y, z)
-                        yscore = runs_metrics_scores[y][0][metric]
-                        zscore = runs_metrics_scores[z][0][metric]
-                        actual = yscore <= zscore
+    def reachable(start):
+        # the set of reachable nodes
+        reachable = set()
 
-                        not_equal = (yscore != zscore)
+        # recursive function to add all reachable nodes to `reachable`
+        def finder(node):
+            reachable.add(node)
+            for me,other in G.out_edges(node):
+                finder(other)
 
-                        if xor(expect, actual) and not_equal:
-                            metrics_rules_viloations[metric][rule.name] += 1
-                            print (
-                            "{}, {}({} , {}) = {} => ({}'s score: {:.4f}, {}'s score: {:.4f}, expected:{}, actual:{})".format(
-                                metric, rule.name, y, z, xor(expect, actual), y, yscore, z, zscore, expect, actual))
+        # add everything we can reach from here
+        finder(start)
+        return reachable
 
-    print ("{},{},{},{}".format("metric", "rule", "matches", "violation"))
+    visited = []
+    count = 0
+    for r in G.nodes_iter():
+        count +=1
+        print (count)
+        reachables = reachable(r)
+
+        y = r
+        for z in reachables :
+            if (z == '' or y == ''):
+                continue
+            rules = get_incremental_matching_rules(y, z)
+
+            for rule in rules:
+                if (isinstance(rule, NA)):
+                        na_count += 1
+                        continue
+                for metric in metrics:
+
+                    metrics_rules_matches[metric][rule.name] += 1
+                    expect = rule.sign(y, z)
+                    yscore = runs_metrics_scores[y][metric]
+                    zscore = runs_metrics_scores[z][metric]
+                    actual = yscore <= zscore
+
+                    not_equal = (yscore != zscore)
+
+                    if xor(expect, actual) and not_equal:
+                        metrics_rules_viloations[metric][rule.name] += 1
+                        # print(
+                        #     "{}, {}({} , {}) = {} => ({}'s score: {:.4f}, {}'s score: {:.4f}, expected:{}, actual:{})".format(
+                        #         metric, rule.name, y, z, xor(expect, actual), y, yscore, z, zscore, expect, actual))
+
+    # for y, z in itertools.combinations(runs,2):
+    #             rules = get_incremental_matching_rules(y, z)
+    #
+    #             count+=1
+    #             print (count)
+    #             for rule in rules:
+    #                 if (isinstance(rule,NA)):
+    #                     if (g_path_rule.match(y,z)):
+    #                         rule = g_path_rule
+    #                     # elif (e_path_rule.match(z,y)):
+    #                     #     rule = e_path_rule
+    #                     else:
+    #                         na_count += 1
+    #                         continue
+    #                 for metric in metrics:
+    #                     metrics_rules_matches[metric][rule.name] += 1
+    #                     expect = rule.sign(y, z)
+    #                     yscore = runs_metrics_scores[y][0][metric]
+    #                     zscore = runs_metrics_scores[z][0][metric]
+    #                     actual = yscore <= zscore
+    #
+    #                     not_equal = (yscore != zscore)
+    #
+    #                     if xor(expect, actual) and not_equal:
+    #                         metrics_rules_viloations[metric][rule.name] += 1
+    #                         print (
+    #                         "{}, {}({} , {}) = {} => ({}'s score: {:.4f}, {}'s score: {:.4f}, expected:{}, actual:{})".format(
+    #                             metric, rule.name, y, z, xor(expect, actual), y, yscore, z, zscore, expect, actual))
+    #
+    # print ("{},{},{},{}".format("metric", "rule", "matches", "violation"))
 
 
     for m in metrics:
@@ -1207,20 +1257,18 @@ def build_fast_graphs(a,M):
             for x in A:
                 child = node + x
                 level_nodes[m].append(child)
+
                 runs.append(child)
-                G.add_edge(node,child)
+
+                if (x == "x"):
+                  G.add_edge(child,node)
+                else:
+                    G.add_edge(node,child)
                 children.append(child)
 
             for y in children:
                 for z in children:
-                    rules = get_graph_independent_matching_rules(y, z)
-                    for rule in rules:
-                        if isinstance(rule, NA):
-                            if len(rules) != 1:
-                                raise Exception("NA can not be associated with othe rules")
-
-                            continue
-
+                        rule = P_RN()
                         verdict = rule.sign(y, z)
                         reversed_verdict = rule.sign(z, y)
 
@@ -1981,16 +2029,14 @@ if __name__ == '__main__':
     # df = pd.read_csv(os.path.expanduser("abx-3-web.csv"))
     # validate_metrics(df, metrics=metrics, print_na=False)
 
-    for m in [5]:
-
-        print_coverage_table(a, m, False)
+    for m in [10]:
         print (" \n \n ============== {} ===========================".format(m))
         print ("  DD ")
-        dd_result_file = "abx-{}-5-dd.csv".format(m)
-        # dd_result_file = "abx-{}-dd.csv".format(m)
-        # metrics = ["ct","act"]
+        # dd_result_file = "abx-{}-5-dd.csv".format(m)
+        dd_result_file = "abx-{}-dd.csv".format(m)
+        metrics = ["ct","act"]
         df = pd.read_csv(os.path.join(data_path,dd_result_file))
-        metrics = ["ct", "nct","act","EU","nEU","sDCG","nsDCG"]
+        # metrics = ["ct", "nct","act","EU","nEU","sDCG","nsDCG"]
         # it_df = df
         it_df = df[df["iteration"] == 1]
         validate_metrics(it_df, metrics,M=m, print_na=False, print_violation_only=False,one_branch_only=False)
@@ -2001,7 +2047,7 @@ if __name__ == '__main__':
         web_result_file = os.path.join(data_path,"abx-{}-web.csv".format(m))
         t_web_result_file = "abx-{}-tweb.csv".format(m)
         df = pd.read_csv(os.path.expanduser(web_result_file))
-        validate_metrics(df, metrics=metrics, M=m,print_na=False, print_violation_only=False,one_branch_only=True)
+        validate_metrics(df, metrics=metrics, M=m,print_na=False, print_violation_only=False,one_branch_only=False)
 
         # print(" \n \n Ad hoc Depth")
         #
