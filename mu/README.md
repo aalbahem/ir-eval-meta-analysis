@@ -1,2 +1,0 @@
-# ir-eval-meta-analysis
-
