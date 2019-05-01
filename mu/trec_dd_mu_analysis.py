@@ -1682,13 +1682,13 @@ if __name__=="__main__":
     #                                           mu_csv_file="trec-{}-mu-simple-metrics.csv", iterations=[1, 3, 10],
     #                                           print_all_years=True, print_all=True)
 
-    trec_analysis.print_analysis_latex_report(field="sig_wins", years=["2015", "2016", "2017"],
-                                              metrics_sets=M_GS_Labels,
-                                              mu_csv_file="trec-{}-mu-simple-metrics.csv", iterations=[1, 3,7, 10],
-                                              print_all_years=True, print_all=True)
+    # trec_analysis.print_analysis_latex_report(field="sig_wins", years=["2015", "2016", "2017"],
+    #                                           metrics_sets=M_GS_Labels,
+    #                                           mu_csv_file="trec-{}-mu-simple-metrics.csv", iterations=[1, 3,7, 10],
+    #                                           print_all_years=True, print_all=True)
 
-    # trec_analysis.print_rank_correlation(left_field="mu_wins", right_field = "sig_wins",years=["2015", "2016", "2017"], metrics_sets=M_GS_Labels,
-    #                                      mu_csv_file="trec-{}-mu-simple-metrics.csv", iterations=[1, 3, 10],print_all=True,print_all_years=True)
+    trec_analysis.print_rank_correlation(left_field="mu_wins", right_field = "sig_wins",years=["2015", "2016", "2017"], metrics_sets=M_GS_Labels,
+                                         mu_csv_file="trec-{}-mu-simple-metrics.csv", iterations=[1, 3, 10],print_all=True,print_all_years=True)
 
     # data = [{"wins":5,"metric":"a"},{"wins":4,"metric":"b"},{"wins":4,"metric":"c"},{"wins":3,"metric":"d"}]
     # data_df = pd.DataFrame(data)
