@@ -217,5 +217,5 @@ if __name__ == "__main__":
     # run_year_analysis("2015")
     # run_year_analysis("2016")
     # run_year_analysis("2017")
-    #run_year_analysis("all")
+    # run_year_analysis("all")
     run_year_generate_intutivness_table("2016")

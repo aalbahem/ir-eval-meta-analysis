@@ -4,7 +4,7 @@ from unittest import TestCase
 
 from math import log
 
-from mu import MU, to_dict
+from metric_unaniminty import MU, to_dict
 
 
 class TestMU(TestCase):

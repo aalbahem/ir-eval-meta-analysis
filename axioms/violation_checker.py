@@ -1,8 +1,6 @@
 import os
 import re
 
-import itertools
-
 import pandas as pd
 import networkx as nx
 
@@ -14,7 +12,7 @@ class Rule(object):
     name = "NA"
 
 
-    def sign(self, x, z):
+    def is_leq(self, x, z):
         """
           The implementation should return -, <=, >=, <, >, or =
         """
@@ -143,7 +141,7 @@ class NA(Rule):
     Represent a relation that is not model by the current rules.
     """
 
-    def sign(self, y, z):
+    def is_leq(self, y, z):
         return "-"
 
 
@@ -164,7 +162,7 @@ class Path(Rule):
         z_y_path = nx.has_path(self.G,z,y)
         return y_z_path or z_y_path
 
-    def sign(self, y, z):
+    def is_leq(self, y, z):
         is_match = self.match(y,z)
         has_path = nx.has_path(self.G,y,z)
         return is_match and has_path
@@ -184,7 +182,7 @@ class _R(Rule):
         is_all_R = y_x_count == 0 and z_x_count == 0
         return is_empty and is_all_R
 
-    def sign(self, y, z):
+    def is_leq(self, y, z):
 
         is_match = _R.match(y,z)
 
@@ -204,7 +202,7 @@ class _RX(Rule):
         end_x = xor(Rule.end_with_x(y), Rule.end_with_x(z))
         return is_empty and first_is_r and end_x
 
-    def sign(self, y, z):
+    def is_leq(self, y, z):
 
         is_match = _RX.match(y,z)
 
@@ -248,7 +246,7 @@ class SX_S(Rule):
 
         return False
 
-    def sign(self, sx, s):
+    def is_leq(self, sx, s):
         is_match = SX_S.match(sx, s)
         return is_match and len(sx)>len(s)
 
@@ -263,7 +261,7 @@ class Nx_Mx(Rule):
 
             return  (not same) and same_size and end_x
 
-        def sign(self, y, z):
+        def is_leq(self, y, z):
             is_match = Nx_Mx.match(y, z)
             less = is_less(y[0:len(y)-1],z[0:len(z)-1])
             return is_match and less
@@ -297,12 +295,24 @@ class XS_S(Rule):
 
                 return False
 
-            def sign(self, xs, s):
+            def is_leq(self, xs, s):
                 is_match = XS_S.match(xs, s)
                 return is_match and len(xs) > len(s)
 
 class RX_XR(Rule):
-    name = "xR<Rx"
+    name = "rrx<rxr"
+
+    @staticmethod
+    def get_displace_letters(y,z):
+        y_r = re.sub("[^x]", "r",y)
+        z_r = re.sub("[^x]", "r",z)
+
+        displaced_letters = []
+        for i in range(len(y)):
+            if y_r[i] != z_r[i]:
+                displaced_letters.append(i)
+
+        return displaced_letters
 
     @staticmethod
     def match(y, z):
@@ -311,39 +321,58 @@ class RX_XR(Rule):
         if not equal or y ==z:
             return False
 
-        l = len(y)
-
-        x_n = y.count("x")
-        if (x_n ==0 or x_n !=z.count("x") or l == x_n):
-            return
-
-        r_n = l - x_n
-        y_r = y.replace("x","")
-        z_r = z.replace("x","")
-        same_r =y.count(y_r[0]) == r_n and  z.count(y_r[0]) == r_n
-
-        repeated_x = Rule.is_repeated_x(y) and Rule.is_repeated_x(z)
-        return same_r and repeated_x
-
-
-    def sign(self, y, z):
-        is_match = RX_XR.match(y, z)
-
-        if (not is_match):
+        displaced_letters = RX_XR.get_displace_letters(y,z)
+        if len(displaced_letters) != 2 or ('x' not in [y[displaced_letters[0]],y[displaced_letters[1]]]) :
             return False
-        x_n = y.count("x")
-        p_y, p_z = y.find("x"),z.find("x")
-        verdict = (p_y < p_z)
-        while (not verdict):
-            y = str(y).replace("x","",1)
-            z = str(z).replace("x","",1)
-            p_y = y.find("x")
-            p_z = z.find("x")
-            verdict = (p_y < p_z)
-            if  (p_y == -1):
-                break
 
-        return is_match and verdict
+        return True
+
+    def is_leq(self, y, z):
+        matched = self.match(y,z)
+        pair = RX_XR.get_displace_letters(y,z)
+
+        return matched and y[pair [0]] == 'x'
+
+
+class RX_RR(Rule):
+    name = "rx<rr"
+
+    @staticmethod
+    def get_displace_letters(y,z):
+        y_r = re.sub("[^x]", "r",y)
+        z_r = re.sub("[^x]", "r",z)
+
+        displaced_letters = []
+        for i in range(len(y)):
+            if y_r[i] != z_r[i]:
+                displaced_letters.append(i)
+
+        return displaced_letters
+
+    @staticmethod
+    def match(y, z):
+        equal = len(y) == len(z)
+
+        if not equal or y ==z:
+            return False
+
+        displaced_letters = RX_RR.get_displace_letters(y,z)
+
+        if len(displaced_letters) != 1 or ('x' not in [y[displaced_letters[0]],z[displaced_letters[0]]]) :
+            return False
+
+        return True
+
+    def is_leq(self, y, z):
+        equal = len(y) == len(z)
+
+        if not equal or y == z:
+            return False
+
+        matched = RX_RR.match(y,z)
+        pair = RX_RR.get_displace_letters(y,z)
+
+        return matched and y[pair [0]] == 'x'
 
 
 
@@ -357,7 +386,7 @@ class S_S(Rule):
 
         return equal
 
-    def sign(self, y, z):
+    def is_leq(self, y, z):
         is_match = S_S.match(y, z)
 
         #S is equal or less to itself.
@@ -377,7 +406,7 @@ class S_SR(Rule):
 
         return one_r_only and s_r.startswith(s) and s_r[-1] !="x"
 
-    def sign(self, s, sr):
+    def is_leq(self, s, sr):
         is_match = S_SR.match(s, sr)
         return is_match and len(s) < len(sr)
 
@@ -405,7 +434,7 @@ class P_NN(Rule):
         is_not_x = not (r1 =="x" or r2 =="x")
         return equal and same_parent and is_new_new and is_not_x
 
-    def sign(self, pr, pn):
+    def is_leq(self, pr, pn):
         is_match = P_NN.match(pr, pn)
 
         n = len(pr)
@@ -444,7 +473,7 @@ class P_RN(Rule):
 
         return equal and same_parent and is_new and is_not_x
 
-    def sign(self, pr, pn):
+    def is_leq(self, pr, pn):
         is_match = P_RN.match(pr, pn)
 
         n = len(pr)
@@ -474,7 +503,7 @@ class RRR_RNM(Rule):
 
                 return True and is_diverse
 
-            def sign(self, y, z):
+            def is_leq(self, y, z):
                 is_match = RRR_RNM.match(y, z)
 
                 rrr, rnm = y, z
@@ -527,7 +556,7 @@ class RM_MR(Rule):
             repeated_r = Rule.is_repeated_r(y,x) and Rule.is_repeated_r(z,x)
             return same_r and repeated_r
 
-        def sign(self, y, z):
+        def is_leq(self, y, z):
             is_match = RM_MR.match(y, z)
 
             if (not is_match):
@@ -612,7 +641,7 @@ class RRN_RNR(Rule):
 
                 return
 
-            def sign(self, y, z):
+            def is_leq(self, y, z):
                 is_match = RRN_RNR.match(y, z)
 
                 aspects = Rule.aspects(y)
@@ -644,7 +673,7 @@ class RuleValidator(object):
 
         return matched_rules
 
-    def validate_metrics(self,df, A=[],metrics=[], runs=[], m=3,print_violation=False):
+    def validate_metrics(self,df, A=[],metrics=[], runs=[], m=3,print_violation=False, violation_mode = True):
         """
           Evaluate the metrics using the Rule validations
         """
@@ -672,6 +701,7 @@ class RuleValidator(object):
         for metric in metrics:
             metrics_rules_viloations[metric] = {}
             metrics_rules_matches[metric] = {}
+
             for r in rules_names:
                 metrics_rules_viloations[metric][r] = 0
                 metrics_rules_matches[metric][r] = 0
@@ -682,6 +712,8 @@ class RuleValidator(object):
         records = pd.DataFrame.to_dict(avg_df, orient='records')
 
         for r in records:
+            if (len(r["run"]) > m):
+                continue
             name = r["run"]
             runs_metrics_scores[name] = r
 
@@ -690,7 +722,7 @@ class RuleValidator(object):
                 runs =self.generate_runs(A,m)
 
 
-        self.check_count_violation(metrics, metrics_rules_matches, metrics_rules_viloations, path_rule,runs_metrics_scores,print_violation)
+        self.check_count_violation(metrics, metrics_rules_matches, metrics_rules_viloations, path_rule,runs_metrics_scores,print_violation, violation_mode)
 
         columns = ["Metric"]
         total = 0
@@ -698,6 +730,7 @@ class RuleValidator(object):
         rules_pretty_names = {NA.name:"NA",
                               S_SR.name:"$\metric{m}(S)\leq\metric{m}(S{\cdot}r)$",
                               SX_S.name:"$\metric{m}(S{\cdot}x)\leq\metric{m}(S)$",
+                              RX_XR.name:"$\metric{m}(S{\cdot}x)\leq\metric{m}(x{\cdot}S)$",
                               P_RN.name:"$\metric{m}(S{\cdot}p) \leq \metric{m}(S{\cdot}n)$",
                               Path.name:"Induction"
                               }
@@ -737,6 +770,17 @@ class RuleValidator(object):
             "rbu":"\metricat{RBU}{10}",
             "rbu-0.990-0.000":"\metricat{RBU_{p=0.990,e=0}}{10}",
             "rbu-0.990-0.001": "\metricat{RBU_{p=0.990,e=0.001}}{10}",
+
+            "P_5": "\metricat{P}{5}",
+            "ndcg_cut_5": "\\ndcgat{5}",
+            "map_cut_5": "\metric{AP}",
+            "success_5": "\metricat{Success}{5}",
+            "P-IA@5": "\metricat{P-IA}{5}",
+            "alpha-DCG@5": "\metricat{$\\alpha$\metric{-DCG}}{5}",
+            "nERR-IA@5": "\metricat{nERR-IA}{5}",
+            "strec@5": "\metricat{STREC}{5}",
+            "ERR-IA@5": "\metricat{ERR-IA}{5}",
+            "alpha-nDCG@5": "\metricat{$\\alpha$\metric{-NDCG}}{10}",
         }
 
 
@@ -757,7 +801,115 @@ class RuleValidator(object):
 
         return
 
-    def check_count_violation(self, metrics, metrics_rules_matches, metrics_rules_viloations, path_rule,runs_metrics_scores,print_violation=False):
+    def reachable(self,start):
+        # the set of reachable nodes
+        reachable = set()
+
+        # recursive function to add all reachable nodes to `reachable`
+        def finder(node):
+            reachable.add(node)
+            for me, other in self.graph.out_edges(node):
+                finder(other)
+
+        # add everything we can reach from here
+        finder(start)
+        return reachable
+
+    def count_rules_coverage(self, path_rule):
+
+        rules_matches = {}
+
+        for rule in self.rules:
+            rules_matches [rule.name] = 0
+
+        rules_matches [path_rule.name] = 0
+
+        pretty_names = {Path.name : "Induction",
+                       RX_RR.name : "Rep",
+                       RX_XR.name : "Swap",
+                       P_RN.name : "Red",
+                       S_SR.name : "Rel Mont",
+                       SX_S.name : "Irre Mont"}
+
+        count = 0
+        for r in self.graph.nodes():
+            count += 1
+            reachables = self.reachable(r)
+
+            y = r
+            for z in reachables:
+                if (z == '' or y == ''):
+                    continue
+                rules = self.get_matching_rules(y, z)
+
+                # for the graph, we know there is path, check if metric detect them right
+                rules_matches[path_rule.name] += 1
+
+
+                for rule in rules:
+                    if (isinstance(rule, NA)):
+                        continue
+
+                    rules_matches[rule.name] += 1
+                    rules_matches[path_rule.name] += 1
+
+        print ("Rules \n ".format("\t+\t".join([pretty_names[rule.name] for rule in self.rules])))
+        print (rules_matches)
+
+
+    def count_rules_overlap(self, path_rule):
+
+        rules_matches = {}
+
+        for rule in self.rules:
+            rules_matches [rule.name] = set()
+
+        rules_matches [path_rule.name] = set()
+
+        pretty_names = {Path.name : "Induction",
+                       RX_RR.name : "Rep",
+                       RX_XR.name : "Swap",
+                       P_RN.name : "Red",
+                       S_SR.name : "Rel Mont",
+                       SX_S.name : "Irre Mont"}
+
+        count = 0
+        for r in self.graph.nodes():
+            count += 1
+            reachables = self.reachable(r)
+
+            y = r
+            for z in reachables:
+                if (z == '' or y == ''):
+                    continue
+                rules = self.get_matching_rules(y, z)
+
+                # for the graph, we know there is path, check if metric detect them right
+                rules_matches[path_rule.name].add("{}-{}".format(y,z))
+
+
+                for rule in rules:
+                    if (isinstance(rule, NA)):
+                        continue
+
+                    rules_matches[rule.name].add("{}-{}".format(y,z))
+                    rules_matches[path_rule.name].add("{}-{}".format(y,z))
+
+        print ("Rules \n ".format("\t+\t".join([pretty_names[rule.name] for rule in self.rules])))
+
+        print ("\t\t" + "\t\t&".join([ pretty_names[rule.name] for rule in self.rules + [path_rule]]))
+
+        for rule in self.rules + [path_rule]:
+            cols = [pretty_names[rule.name]]
+            for col_rule in self.rules + [path_rule]:
+                    common = rules_matches[rule.name].intersection(rules_matches[col_rule.name])
+                    cols.append(str(len(common)))
+
+            print ("\t\t&".join(cols) + "\\\\")
+
+
+
+    def check_count_violation(self, metrics, metrics_rules_matches, metrics_rules_viloations, path_rule,runs_metrics_scores,print_violation=False, violation_mode=True):
         def reachable(start):
             # the set of reachable nodes
             reachable = set()
@@ -773,7 +925,7 @@ class RuleValidator(object):
             return reachable
 
         count = 0
-        for r in self.graph.nodes_iter():
+        for r in self.graph.nodes():
             count += 1
             reachables = reachable(r)
 
@@ -789,11 +941,11 @@ class RuleValidator(object):
                     expect = True
                     yscore = runs_metrics_scores[y][metric]
                     zscore = runs_metrics_scores[z][metric]
-                    actual = yscore <= zscore
+                    actual = yscore <= zscore if violation_mode else yscore < zscore
 
                     not_equal = (yscore != zscore)
 
-                    if xor(expect, actual) and not_equal:
+                    if xor(expect, actual):
                         metrics_rules_viloations[metric][path_rule.name] += 1
 
                 for rule in rules:
@@ -804,14 +956,14 @@ class RuleValidator(object):
 
                         metrics_rules_matches[metric][rule.name] += 1
                         metrics_rules_matches[metric][path_rule.name] += 1
-                        expect = rule.sign(y, z)
+                        expect = rule.is_leq(y, z)
                         yscore = runs_metrics_scores[y][metric]
                         zscore = runs_metrics_scores[z][metric]
-                        actual = yscore <= zscore
+                        actual = yscore <= zscore if violation_mode else yscore < zscore
 
                         not_equal = (yscore != zscore)
 
-                        if xor(expect, actual) and not_equal:
+                        if xor(expect, actual):
                             metrics_rules_viloations[metric][rule.name] += 1
                             if print_violation:
                                 print(
@@ -835,7 +987,7 @@ class RuleValidator(object):
         return runs
 
 
-    def build_graph(self, A, m):
+    def build_graph(self, A, m, same_level_rules = []):
         """
 
         Builds a relation graph using rules for all truncated and diversfied raunkings of maximums size of M
@@ -878,22 +1030,97 @@ class RuleValidator(object):
 
                 for y in children:
                     for z in children:
-                            rule = P_RN()
-                            verdict = rule.sign(y, z)
-                            reversed_verdict = rule.sign(z, y)
+                            for rule in same_level_rules:
+                                is_less = rule.is_leq(y, z)
 
-                            if verdict:
-                                G.add_edge(y,z)
+                                if is_less:
+                                    G.add_edge(y,z)
 
         return G
+def generate_coverage_table():
+    M = [10]
+    A = ["a", "b"]
+
+    # rules = [SX_S()]
+    # rules = [S_SR()]
+    # rules = [RX_XR()]
+    # rules = [RX_RR()]
+    # rules = [P_RN()]
+    # rules = [SX_S(), S_SR()]
+    # rules = [SX_S(),  RX_XR()]
+    # rules = [SX_S(), RX_RR()]
+    # rules = [SX_S(), P_RN()]
+    # rules = [S_SR(), RX_XR()]
+    # rules = [S_SR(), RX_RR()]
+    # rules = [S_SR(),  P_RN()]
+    # rules = [RX_XR(), RX_RR()]
+    # rules = [RX_XR(), P_RN()]
+    # rules = [RX_RR(), P_RN()]
+
+    [SX_S(), S_SR(), RX_XR(), RX_RR, P_RN()]
+
+    validator = RuleValidator(rules=rules)
+
+    for m in M:
+        print(" \n \n Building tree relationship with ".format(m) + " A: " + ",".join(A))
+        validator.graph = validator.build_graph(A=A, m=m,same_level_rules= [RX_XR(), RX_RR(), P_RN()])
+        validator.count_rules_coverage(Path(validator.graph))
+
+def generate_rules_overlap():
+    M = [10]
+    A = ["a", "b"]
+
+    # rules = [SX_S()]
+    # rules = [S_SR()]
+    # rules = [RX_XR()]
+    # rules = [RX_RR()]
+    # rules = [P_RN()]
+    # rules = [SX_S(), S_SR()]
+    # rules = [SX_S(),  RX_XR()]
+    # rules = [SX_S(), RX_RR()]
+    # rules = [SX_S(), P_RN()]
+    # rules = [S_SR(), RX_XR()]
+    # rules = [S_SR(), RX_RR()]
+    # rules = [S_SR(),  P_RN()]
+    # rules = [RX_XR(), RX_RR()]
+    # rules = [RX_XR(), P_RN()]
+    # rules = [RX_RR(), P_RN()]
+
+    rules = [SX_S(), S_SR(), RX_XR(), RX_RR(), P_RN()]
+
+    validator = RuleValidator(rules=rules)
+
+    for m in M:
+        print(" \n \n Building tree relationship with ".format(m) + " A: " + ",".join(A))
+        validator.graph = validator.build_graph(A=A, m=m,same_level_rules= [RX_XR(), RX_RR(), P_RN()])
+        validator.count_rules_overlap(Path(validator.graph))
+
 
 def adcs2018_experiment(data_path):
         M = [10]
+        M_file = 10
         A= ["a","b"]
-        rules = [SX_S(), S_SR(), P_RN()]
+        # rules = [SX_S(), S_SR(),RX_XR(), P_RN()]
+        rules = [SX_S()]
+        rules = [S_SR()]
+        rules = [RX_XR()]
+        rules = [RX_RR()]
+        rules = [P_RN()]
+        # rules = [SX_S(), S_SR()]
+        # rules = [SX_S(),  RX_XR()]
+        # rules = [SX_S(), RX_RR()]
+        # rules = [SX_S(), P_RN()]
+        # rules = [S_SR(), RX_XR()]
+        # rules = [S_SR(), RX_RR()]
+        # rules = [S_SR(),  P_RN()]
+        # rules = [RX_XR(), RX_RR()]
+        # rules = [RX_XR(), P_RN()]
+        # rules = [RX_RR(), P_RN()]
+
         validator = RuleValidator(rules=rules)
         dd_metrics = ["ct","nct","act","EU","nEU","sDCG","nsDCG"]
-
+        violation_mode = True
+        # violation_mode = False
         adhoc_metrics = ["recip_rank", "P_10", "infAP", "ndcg", "ndcg_cut_10", "map_cut_10", "success_10"]
 
         for m in M:
@@ -901,37 +1128,38 @@ def adcs2018_experiment(data_path):
             validator.graph =   validator.build_graph(A=A, m=m)
 
             print ("  Dynamic Domain Metrics")
-            dd_result_file = "abx-{}-dd.csv".format(m)
+            dd_result_file = "abx-{}-dd.csv".format(M_file)
             dd_df = pd.read_csv(os.path.join(data_path, dd_result_file))
-            validator.validate_metrics(dd_df, A=A, metrics=dd_metrics, m=m)
+            validator.validate_metrics(dd_df, A=A, metrics=dd_metrics, m=m,violation_mode = violation_mode)
 
             print (" \n \n Web Depth")
 
             web_d_metrics = "alpha-DCG@{0},alpha-nDCG@{0},ERR-IA@{0},nERR-IA@{0},NRBP,nNRBP,P-IA@{0},strec@{0},MAP-IA".format(
                 m).split(",")
-            web_result_file = os.path.join(data_path, "abx-{}-web.csv".format(m))
+            web_result_file = os.path.join(data_path, "abx-{}-web.csv".format(M_file))
             wd_df = pd.read_csv(os.path.expanduser(web_result_file))
 
-            validator.validate_metrics(wd_df, A=A, metrics=web_d_metrics, m=m)
+            validator.validate_metrics(wd_df, A=A, metrics=web_d_metrics, m=m,violation_mode = violation_mode)
 
             print(" \n \n Ad hoc Depth")
 
             print(" \n \n ============== {} ===========================".format(m))
             print("  Ad hoc ")
             adhoc_A = ["a"]
-            dd_result_file = os.path.join(data_path, "{}x-{}-adhoc.csv".format("".join(adhoc_A), m))
+            dd_result_file = os.path.join(data_path, "{}x-{}-adhoc.csv".format("".join(adhoc_A), M_file))
             df = pd.read_csv(os.path.expanduser(dd_result_file))
 
 
             adhoc_A = ["a"]
             validator.graph = validator.build_graph(A=adhoc_A,m=m)
-            validator.validate_metrics(df, A=adhoc_A,metrics=adhoc_metrics, m=m)
+            validator.validate_metrics(df, A=adhoc_A,metrics=adhoc_metrics, m=m, violation_mode = violation_mode)
 
 
 if __name__ == '__main__':
+    generate_rules_overlap()
 
-
-    adcs2018_experiment(data_path = "data")
+    # generate_coverage_table()
+    # adcs2018_experiment(data_path = "data")
 
 
 
